@@ -1,0 +1,79 @@
+---
+trajectory_parameters:
+  trajectory_name:
+    type: string
+    description: "Trajectory class to use."
+    validation:
+      not_empty<>: []
+  max_delay:
+    type: int
+    default_value: 0
+    description: "Max delay between the last generated point and currently processed MPC point. Unlimited when 0"
+  mask:
+    type: bool_array
+    default_value: [True, True, True, True, True, True]
+    description: "Mask for the cartesian space sine wave DoF to update from the Inverse Kinematic."
+  ee_frame_name:
+    type: string
+    description: "End-effector name."
+    validation:
+      not_empty<>: []
+  w_q:
+    type: double_array
+    default_value: [1.0]
+    description: "Weights for joint configuration cost."
+  w_qdot:
+    type: double_array
+    default_value: [0.1]
+    description: "Weights for joint velocity cost."
+  w_qddot:
+    type: double_array
+    default_value: [0.0001]
+    description: "Weights for joint acceleration cost."
+  w_robot_effort:
+    type: double_array
+    default_value: [0.001]
+    description: "Weights for control cost."
+  w_pose:
+    type: double_array
+    default_value: [0.1]
+    description: "Weights for end-effector position cost."
+  line_endpoints:
+    rotation:
+      type: double_array
+      default_value: [0.0]
+      description: "End effector rotation [r, p, y] in radians."
+    time:
+      type: double_array
+      default_value: [0.0]
+      description: "Transition times."
+    x:
+      type: double_array
+      default_value: [0.0]
+      description: "Coordinates of the endpoints of the poly-line."
+    w_mul:
+      type: double_array
+      default_value: [0.0]
+      description: "Multipliers for weights for end-effector position cost."
+    goal_tolerance:
+      type: double_array
+      default_value: [0.0]
+      description: "Distance to goal tolerance."
+    goal_tolerance_boost:
+      type: double
+      default_value: 1.0
+      description: "Tolerance multiplier when approaching the goal."
+    goal_weight_boost:
+      type: double
+      default_value: 1.0
+      description: "Pose weight multiplier when approaching the goal."
+  saw:
+    tooth_length:
+      type: double
+      default_value: 0.0
+      description: "Length of one saw tooth along the line."
+    tooth_tip:
+      type: double_array
+      default_value: [0.0]
+      description: "Size and direction of the saw tooth leading edge."
+
