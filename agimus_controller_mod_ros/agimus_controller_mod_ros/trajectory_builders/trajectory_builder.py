@@ -9,6 +9,7 @@ from agimus_controller.trajectory import TrajectoryPointWeights
 from agimus_controller_mod.trajectories.trajectory import (
     Trajectory,
     CartesianSegment,
+    SegmentedCartesianTrajectory,
 )
 
 from rclpy.impl.rcutils_logger import RcutilsLogger
@@ -32,6 +33,11 @@ class TrajectoryBuilder(ABC):
                   goal: TrajectoryGoal,
                   nq: int) -> CartesianSegment:
         """Build a trajectory segment from a trajectory goal."""
+
+    @abstractmethod
+    def to_goal(self, trajectory: Trajectory,
+                goal: TrajectoryGoal) -> TrajectoryGoal:
+        """Build a trajectory goal from a trajectory segment."""
 
 
 def get_weights(weights: list[np.float64], size: int) -> np.ndarray:
@@ -62,11 +68,28 @@ def get_all_weights(params: Union[trajectory_parameters.Params, TrajectoryGoal],
         }
     )
 
+def set_all_weights(weights: TrajectoryPointWeights,
+                    goal: TrajectoryGoal,
+                    ee_frame_name: str,
+                    ) -> None:
+    """Set weights in the ROS goal from TrajectoryPointWeights object."""
+
+    goal.w_q = list(weights.w_robot_configuration)
+    goal.w_qdot = list(weights.w_robot_velocity)
+    goal.w_qddot = list(weights.w_robot_acceleration)
+    goal.w_robot_effort = list(weights.w_robot_effort)
+    goal.w_pose = list(weights.w_end_effector_poses[ee_frame_name])
+
 
 def get_trajectory_builder(trajectory_name: str,
                            logger: RcutilsLogger,
                            ) -> TrajectoryBuilder:
     """Instantiate the builder referenced as a 'module:Class' string."""
+
+    trajectory_name_list = trajectory_name.split(':')
+    if len(trajectory_name_list) != 2:
+        logger.error(f'Wrong trajectory "{trajectory_name}".')
+        raise ValueError(f'Wrong trajectory "{trajectory_name}".')
 
     # Split the user-facing identifier into the relative module and class name.
     module_name, class_name = trajectory_name.split(':')

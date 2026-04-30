@@ -19,6 +19,7 @@
   <depend>geometry_msgs</depend>
   <depend>builtin_interfaces</depend>
   <depend>agimus_controller</depend>
+  <depend>agimus_controller_mod_msg</depend>
   <depend>agimus_controller_mod</depend>
   <depend>agimus_controller_ros</depend>
 

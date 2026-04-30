@@ -102,7 +102,6 @@ class CartesianSegment(Trajectory, ABC):
         self.velocity = None
         self.ee_init_pos = None
         self.running = False
-        self.goal_min_dist = None
         self.last_x = None
         self.last_t = 0.0
         self.current_t = 0.0
@@ -214,7 +213,6 @@ class SegmentedCartesianTrajectory(Trajectory, ABC):
         self.w_pose = weights.w_end_effector_poses[ee_frame_name]
         self.goal_tolerance = None
         self.point = -1  # the current point we are moving to
-        self.ee_init_pos = None
         self.info_logger = info_logger
 
         assert len(rotation_rpy) == 3, "rotation length must be 3"
@@ -225,6 +223,10 @@ class SegmentedCartesianTrajectory(Trajectory, ABC):
 
         self.x = np.array(x).reshape((-1, 3))
         self.n_points = len(self.x)
+
+        # init pos for the case the trajectory is not initialized, so that
+        # switch segment would still work
+        self.ee_init_pos = pin.SE3(self.rotation, self.x[0])
 
         assert len(transition_time) == self.n_points + 1, \
             "time length must be the number of points + 1"
@@ -290,7 +292,6 @@ class SegmentedCartesianTrajectory(Trajectory, ABC):
             self.info_logger(f"Point set: {self.point}, " +
                              f"t={self.segment.duration}, " +
                              f"x_to={self.segment.x_to}")
-
 
     def get_traj_point_at_tq(self, t: list[np.float64], q: np.ndarray
                              ) -> list[WeightedTrajectoryPoint]:

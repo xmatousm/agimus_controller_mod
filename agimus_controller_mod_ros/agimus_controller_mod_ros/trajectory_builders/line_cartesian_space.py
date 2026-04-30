@@ -2,6 +2,7 @@ from rclpy.impl.rcutils_logger import RcutilsLogger
 
 from .trajectory_builder import (
     get_all_weights,
+    set_all_weights,
     trajectory_parameters,
     TrajectoryGoal,
     TrajectoryBuilder,
@@ -39,6 +40,26 @@ class LineCartesianSpace(TrajectoryBuilder):
         """Build a single line-segment from an action goal."""
         weights = get_all_weights(goal, nq, goal.frame_name)
         trajectory = traj.LineSegmentCartesianSpace(goal.frame_name, weights)
+        trajectory.goal_tolerance = goal.goal_tolerance
         trajectory.goal_weight_boost = goal.goal_weight_boost
         trajectory.goal_tolerance_boost = goal.goal_tolerance_boost
         return trajectory
+
+    def to_goal(self, segment: traj.LineSegmentCartesianSpace,
+                goal: TrajectoryGoal) -> TrajectoryGoal:
+
+        goal.frame_name = segment.ee_frame_name
+        goal.trajectory_type = __name__.rpartition(".")[-1] + ':' + \
+                               self.__class__.__name__
+        set_all_weights(segment.weights, goal, segment.ee_frame_name)
+
+        goal.pose = list(segment.x_to)
+        # TODO set goal.rot_rpy here
+
+        goal.goal_tolerance = segment.goal_tolerance
+        goal.goal_weight_boost = segment.goal_weight_boost
+        goal.goal_tolerance_boost = segment.goal_tolerance_boost
+        goal.duration = segment.duration
+        goal.speed = -1.0
+
+        return goal
