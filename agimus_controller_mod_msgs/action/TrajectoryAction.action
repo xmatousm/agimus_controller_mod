@@ -1,0 +1,9 @@
+TrajectoryGoal goal
+---
+# Finish - distance to goal
+float64 distance
+int64 id
+---
+# Current distance to goal
+float64 distance
+int64 id

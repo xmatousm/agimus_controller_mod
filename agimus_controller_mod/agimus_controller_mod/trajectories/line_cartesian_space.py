@@ -2,37 +2,35 @@ from copy import deepcopy
 import numpy as np
 import pinocchio as pin
 from scipy.linalg import expm
-from typing import Optional
-from .trajectory import TrajectoryPoint, WeightedTrajectoryPoint
+from typing import Optional, Callable
+from .trajectory import (
+    SegmentedCartesianTrajectory,
+    CartesianSegment,
+    TrajectoryPoint,
+    TrajectoryPointWeights,
+    WeightedTrajectoryPoint,
+)
 
-from .trajectory_segment import TrajectorySegment
 
-class LineSegmentCartesianSpace(TrajectorySegment):
-    """Line segment defined by end-points in the cartesian space."""
+class LineSegmentCartesianSpace(CartesianSegment):
+    """Straight Cartesian segment between two poses."""
 
-    def __init__(self, ee_frame_name: str):
-        super().__init__(ee_frame_name)
-        self.ik_q = None
+    def __init__(self, ee_frame_name: str, weights: TrajectoryPointWeights):
+        super().__init__(ee_frame_name, weights)
         self.goal_tolerance: Optional[float] = None
         self.goal_tolerance_boost = 1.0
         self.goal_weight_boost = 1.0
-        self.logger = None
         self.w_boost = 1.0
-
-    def initialize(self, pin_model: pin.Model, q0: np.ndarray) -> None:
-        """Initialize the trajectory generator."""
-        super().initialize(pin_model, q0)
-        self.ik_q = q0.copy()
 
     def interpolate_weighted_point(self, alpha, alpha_w
                                    ) -> WeightedTrajectoryPoint:
-        """Interpolate cartesian line segment."""
+        """Interpolate one sample along the line segment."""
 
         translation = self.x_from + alpha * self.x_delta
         rotation = expm(self.r_delta_log * alpha) @ self.r_from
         ee_des_pos = pin.SE3(rotation, translation)
 
-        # required velocity computed from the current, and the last point
+        # Approximate the desired Cartesian velocity from consecutive samples.
         dt = self.current_t - self.last_t
 
         if dt == 0.0:
@@ -58,31 +56,33 @@ class LineSegmentCartesianSpace(TrajectorySegment):
                 self.ee_frame_name: pin.SE3ToXYZQUAT(ee_des_pos)},
         )
 
-        # optionally interpolate pose weights
+        # Optionally ramp the pose weight over the segment.
         traj_weights = deepcopy(self.weights)
         if self.w_pose_from is not None:
             w_pose = self.w_pose_from * (1 - alpha_w) + self.w_pose_to * alpha_w
             traj_weights.w_end_effector_poses[self.ee_frame_name] = w_pose
 
-        # additional multiplier
+        # Goal-based boosting is applied on top of the nominal/interpolated
+        # pose weights.
         traj_weights.w_end_effector_poses[self.ee_frame_name] *= self.w_boost
 
         return WeightedTrajectoryPoint(
             point=deepcopy(traj_point), weights=traj_weights)
 
     def evaluate_dist_to_goal(self, curr_pos, t) -> float:
+        """Update finish conditions and optional weight boosting."""
         dist_to_goal = np.sqrt(np.sum((self.x_to - curr_pos) ** 2))
 
         # optionally boost weights when approaching the goal
         if self.goal_tolerance is not None:
-            # when we are near the goal than the tolerance * tolerance_boost,
-            # multiply the weights linearly between 1.0 and goal_weight_boost
+            # Inside the boosted tolerance band, scale weights linearly from
+            # 1.0 up to ``goal_weight_boost`` as we approach the target.
             a = max(0.0, 1.0 - dist_to_goal / (self.goal_tolerance *
                                                self.goal_tolerance_boost))
 
             self.w_boost = a * (self.goal_weight_boost - 1.0) + 1.0
-            if self.logger is not None and a > 0.0:
-                self.logger.info(
+            if self.info_logger is not None and a > 0.0:
+                self.info_logger(
                     f"  Goal boost: {self.w_boost}  {dist_to_goal} {self.goal_tolerance} {self.goal_tolerance_boost}",
                     throttle_duration_sec=1.0)
 
@@ -93,8 +93,8 @@ class LineSegmentCartesianSpace(TrajectorySegment):
                 if dist_to_goal < self.goal_tolerance:
                     self.running = False
                 else:
-                    if self.logger is not None:
-                        self.logger.warn(
+                    if self.info_logger is not None:
+                        self.info_logger(
                             f"Dist to goal: {dist_to_goal} > {self.goal_tolerance}",
                             throttle_duration_sec=1.0)
 
@@ -122,3 +122,29 @@ class LineSegmentCartesianSpace(TrajectorySegment):
         self.last_x = last_x
         self.last_t = t[0]
         return points
+
+
+class LineCartesianSpace(SegmentedCartesianTrajectory):
+    """Piecewise-linear Cartesian trajectory through configured waypoints."""
+
+    def __init__(
+            self,
+            x,
+            transition_time,
+            w_mul,
+            ee_frame_name: str,
+            rotation_rpy,
+            weights: TrajectoryPointWeights,
+            goal_tolerance: Optional[list] = None,
+            goal_tolerance_boost: float = 1.0,
+            goal_weight_boost: float = 1.0,
+            info_logger: Optional[Callable] = None,
+    ):
+        super().__init__(x, transition_time, w_mul,
+                         ee_frame_name, rotation_rpy, weights,
+                         goal_tolerance, info_logger)
+
+        self.segment = LineSegmentCartesianSpace(ee_frame_name, weights)
+        self.segment.info_logger = info_logger
+        self.segment.goal_tolerance_boost = goal_tolerance_boost
+        self.segment.goal_weight_boost = goal_weight_boost

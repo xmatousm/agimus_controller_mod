@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+
+<package format="3">
+  <name>agimus_controller_mod</name>
+  <version>0.0.0</version>
+  <description>The agimus_controller package; some modifications</description>
+  <maintainer email="Martin.Matousek@cvut.cz">Martin Matoušek</maintainer>
+
+  <license>BSD-3-clause</license>
+  <url type="website">https://github.com/agimus-project/agimus_controller</url>
+
+  <!-- Run-time dependencies -->
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>colmpc</exec_depend>
+  <exec_depend>crocoddyl</exec_depend>
+  <exec_depend>coal</exec_depend>
+  <exec_depend>example-robot-data</exec_depend>
+  <!-- TODO fix installing of this dependency -->
+  <!-- <exec_depend>force_feedback_mpc</exec_depend> -->
+  <exec_depend>mim_solvers</exec_depend>
+  <exec_depend>pinocchio</exec_depend>
+  <depend>agimus_controller</depend>
+
+  <!-- Test dependencies -->
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <!-- Optional testing of the franka_description model. -->
+  <test_depend>ament_index_python</test_depend>
+  <test_depend>franka_description</test_depend>
+  <test_depend>xacro</test_depend>
+  <test_depend>python3-yaml</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

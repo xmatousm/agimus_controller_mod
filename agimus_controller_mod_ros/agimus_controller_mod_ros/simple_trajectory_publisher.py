@@ -17,20 +17,24 @@ from agimus_controller_ros.simple_trajectory_publisher import (
     TrajectoryPublisherBase,
 )
 
-from .trajectories.trajectory import Trajectory
+from agimus_controller_mod.trajectories.trajectory import Trajectory
+from .trajectory_builders.trajectory_builder import (
+    get_trajectory_builder,
+)
 
 from agimus_demos_common.node_utils import init_spin_node
-import importlib
 
 
 class OcpParamsClientMixin:
+    """Read OCP timing parameters from the controller node."""
+
     def __init__(self, node: Node):
-        # main clock period
+        # Main clock period used to publish MPC input samples.
         self.dt = get_param_from_node(
             node, "agimus_controller_node", "ocp.dt"
         ).double_value
 
-        # horizon size
+        # Horizon size is stored as piecewise-constant dt factors.
         n_steps = get_param_from_node(
             node, "agimus_controller_node", "ocp.dt_factor_n_seq.n_steps"
         ).integer_array_value
@@ -50,7 +54,7 @@ class OcpParamsClientMixin:
 
 class SimpleTrajectoryPublisherMod(TrajectoryPublisherBase,
                                    OcpParamsClientMixin):
-    """This is a modified simple trajectory publisher."""
+    """Continuously publish a configured trajectory to the MPC input topic."""
 
     def __init__(self):
         self.initialized = False
@@ -72,7 +76,14 @@ class SimpleTrajectoryPublisherMod(TrajectoryPublisherBase,
         self.future_trajectory_done = Future()
         self.use_q = False  # send current q to trajectory
 
-        self.trajectory = self.get_trajectory(self.params)
+        # Build the chosen trajectory
+        builder = get_trajectory_builder(self.params.trajectory_name,
+                                         self.get_logger())
+
+        self.trajectory = builder.from_params(self.params,
+                                              self.croco_nq,
+                                              self.ee_frame_name,
+                                              self.get_logger())
 
         self._mpc_debug_sub = self.create_subscription(
             MpcDebug,
@@ -89,6 +100,7 @@ class SimpleTrajectoryPublisherMod(TrajectoryPublisherBase,
         self.get_logger().info("Initialized.")
 
     def ready_callback(self):
+        """Swap the bootstrap timer for the real publishing timer."""
         if not self.initialized:
             # Base can run this via the timer before our init finishes
             self.get_logger().warn("Not ready.")
@@ -102,39 +114,11 @@ class SimpleTrajectoryPublisherMod(TrajectoryPublisherBase,
         self.timer = self.create_timer(self.dt, self.publish_mpc_input)
 
     def mpc_debug_callback(self, msg: MpcDebug):
+        """Track the latest point id consumed by MPC."""
         self.last_mpc_point_id = msg.trajectory_point_id
 
-    def get_trajectory(self,
-                       params: trajectory_parameters.Params) -> Trajectory:
-        """Build the chosen trajectory."""
-
-        # dynamic import of a trajectory class
-        module_name, class_name = params.trajectory_name.split(':')
-        package_name = self.__module__.rpartition(".")[0]
-        module_name = f'{package_name}.trajectories.{module_name}'
-        self.get_logger().info(f'Importing {module_name}')
-
-        try:
-            module = importlib.import_module(module_name)
-        except ModuleNotFoundError:
-            self.get_logger().error('Wrong trajectory ' +
-                                    params.trajectory_name)
-            raise
-
-        self.get_logger().info(f'Creating {class_name} from {module_name}')
-
-        try:
-            BuilderClass = getattr(module, class_name)
-        except AttributeError:
-            self.get_logger().error('Wrong trajectory ' +
-                                    params.trajectory_name)
-            raise
-
-        return BuilderClass.from_params(params, self.croco_nq,
-                                        self.ee_frame_name,
-                                        self.get_logger())
-
     def publish_mpc_input(self):
+        """Publish the next point of the configured trajectory."""
         if self.first_run:
             self.get_logger().info("Running.")
             self.first_run = False
