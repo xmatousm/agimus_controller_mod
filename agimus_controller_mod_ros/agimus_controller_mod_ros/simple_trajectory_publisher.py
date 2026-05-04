@@ -22,7 +22,7 @@ from .trajectory_builders.trajectory_builder import (
     get_trajectory_builder,
 )
 
-from agimus_demos_common.node_utils import init_spin_node
+from .node_utils import init_spin_node
 
 
 class OcpParamsClientMixin:

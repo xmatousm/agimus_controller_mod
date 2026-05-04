@@ -2,7 +2,7 @@ import rclpy
 from agimus_controller_mod_msgs.action import TrajectoryAction
 from rclpy.node import Node
 from rclpy.action import ActionClient
-from agimus_demos_common.node_utils import init_spin_node
+from .node_utils import init_spin_node
 
 from .trajectory_builders.trajectory_builder import (
     get_trajectory_builder,
