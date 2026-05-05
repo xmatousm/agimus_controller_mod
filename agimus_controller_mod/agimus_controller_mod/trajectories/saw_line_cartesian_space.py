@@ -31,7 +31,9 @@ class SawLineSegmentCartesianSpace(CartesianSegment):
         self.tooth_tip = tooth_tip
 
     def init_segment(self) -> None:
-        """Precompute the tooth length in normalized segment coordinates."""
+        super().init_segment()
+
+        # Precompute the tooth length in normalized segment coordinates.
         d = np.linalg.norm(self.x_to - self.x_from)
         self.tooth_length_rel = self.tooth_length / d
 
@@ -104,7 +106,8 @@ class SawLineSegmentCartesianSpace(CartesianSegment):
         last_x = None
         for one_t in t:
             self.current_t = one_t
-            alpha = min((one_t - self.t_from) / self.duration, 1.0)
+            alpha = min((one_t - self.t_from) / self.duration
+                if self.duration > 0.0 else 1.0, 1.0)
             points += [self.interpolate_weighted_point(alpha, alpha)]
             if last_x is None:
                 last_x = self.last_x

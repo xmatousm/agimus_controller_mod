@@ -124,10 +124,6 @@ class CartesianSegment(Trajectory, ABC):
         self.last_x = self.ee_init_pos.translation.copy()
         self.last_t = 0.0
 
-    def init_segment(self) -> None:
-        """Additional derived class setup called at the end of set_segment()."""
-        pass
-
     def set_segment(self, t: np.float64,
                     x_from: np.ndarray,
                     x_to: np.ndarray,
@@ -141,49 +137,61 @@ class CartesianSegment(Trajectory, ABC):
                     ):
         """Configure segment end points, timing, and optional pose weights."""
 
-        self.running = True
         self.x_from = x_from
         self.x_to = x_to
-        self.x_delta = x_to - x_from
-        self.x_len_init = np.linalg.norm(self.x_delta)
         self.r_from = r_from
         self.r_to = r_to
-        self.r_delta_log = logm(r_to @ r_from.T)
 
+        self.t_from = t
         self.velocity = velocity
+        self.duration = duration
+        self.w_pose_from = w_pose_from
+        self.w_pose_to = w_pose_to
+
+        if weights is not None:
+            self.weights = weights
+        self.init_segment()
+
+    def init_segment(self) -> None:
+        """Segment initialization after its data has been set."""
+
+        self.running = True
+
+        assert self.x_from is not None
+        assert self.x_to is not None
+        assert self.r_from is not None
+        assert self.r_to is not None
+        assert self.t_from is not None
+
+        self.x_delta = self.x_to - self.x_from
+        self.x_len_init = np.linalg.norm(self.x_delta)
+        self.r_delta_log = logm(self.r_to @ self.r_from.T)
 
         # Either duration or velocity must be provided.
         # If one is missing, derive it from the other and the Cartesian length.
         # When both are provided, the longer duration wins, so the commanded
         # speed never exceeds the requested velocity.
 
-        if velocity is None:
+        if self.velocity is None:
             # velocity from duration (can be computed as zero here)
-            assert duration is not None and duration > 0.0
-            self.duration = duration
-            self.velocity = self.x_len_init / duration
+            assert self.duration is not None and self.duration > 0.0
+            self.velocity = self.x_len_init / self.duration
 
         else:
-            assert velocity > 0.0
+            assert self.velocity > 0.0
             # Compute duration from the velocity, use the maximum of it and
-            # the given one; the result must be positive (so for a zero-length
-            # trajectory, the positive duration must be given).
-            self.duration = np.linalg.norm(self.x_delta) / velocity
-            if duration is not None:
+            # the given one (for a zero-length segment, the result can be zero)
+            duration = np.linalg.norm(self.x_delta) / self.velocity
+            if self.duration is not None:
                 self.duration = max(self.duration, duration)
-            assert self.duration > 0.0
+            else:
+                self.duration = duration
 
-        self.t_from = t
-        self.t_to = t + self.duration
+            assert self.duration >= 0.0
 
-        self.w_pose_from = w_pose_from
-        self.w_pose_to = w_pose_to
-
-        if weights is not None:
-            self.weights = weights
+        self.t_to = self.t_from + self.duration
 
         assert (self.w_pose_from is None) == (self.w_pose_to is None)
-        self.init_segment()
 
 
 class SegmentedCartesianTrajectory(Trajectory, ABC):

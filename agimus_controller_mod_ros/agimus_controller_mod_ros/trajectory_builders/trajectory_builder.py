@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import numpy as np
+import pinocchio as pin
 import importlib
 from typing import Union
 from agimus_controller_mod_ros.trajectory_parameters import \
@@ -68,6 +69,7 @@ def get_all_weights(params: Union[trajectory_parameters.Params, TrajectoryGoal],
         }
     )
 
+
 def set_all_weights(weights: TrajectoryPointWeights,
                     goal: TrajectoryGoal,
                     ee_frame_name: str,
@@ -79,6 +81,29 @@ def set_all_weights(weights: TrajectoryPointWeights,
     goal.w_qddot = list(weights.w_robot_acceleration)
     goal.w_robot_effort = list(weights.w_robot_effort)
     goal.w_pose = list(weights.w_end_effector_poses[ee_frame_name])
+
+
+def set_segment(goal: TrajectoryGoal,
+                segment: CartesianSegment) -> None:
+    """Set common attributes of a Cartesian segment from a goal."""
+
+    segment.x_to = np.array(goal.pose)
+    segment.r_to = pin.rpy.rpyToMatrix(
+        goal.rot_rpy[0], goal.rot_rpy[1], goal.rot_rpy[2])
+    segment.duration = goal.duration if goal.duration > 0.0 else None
+    segment.velocity = goal.speed if goal.speed > 0.0 else None
+
+
+def set_goal(goal: TrajectoryGoal,
+             segment: CartesianSegment) -> None:
+    """Set common attributes of a Cartesian segment to a goal."""
+
+    set_all_weights(segment.weights, goal, segment.ee_frame_name)
+    goal.frame_name = segment.ee_frame_name
+    goal.pose = list(segment.x_to)
+    # TODO set goal.rot_rpy here
+    goal.duration = segment.duration if segment.duration is not None else -1.0
+    goal.speed = segment.velocity if segment.velocity is not None else -1.0
 
 
 def get_trajectory_builder(trajectory_name: str,

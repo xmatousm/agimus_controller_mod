@@ -81,7 +81,7 @@ class TrajectoryGoalServer(TrajectoryPublisherBase,
 
     def ready_callback(self):
         """Unblock startup once the base publisher has finished initializing."""
-        self.get_logger().error(f'ready')
+        self.get_logger().info(f'Ready')
         self.future_base_init_done.set_result(True)
 
     def publish_mpc_input(self):
@@ -141,31 +141,27 @@ class TrajectoryGoalServer(TrajectoryPublisherBase,
         segment = builder.from_goal(goal, nq)
         segment.initialize(self.robot_models.robot_model, self.q0)
 
-        rotation = pin.rpy.rpyToMatrix(
-            goal.rot_rpy[0], goal.rot_rpy[1], goal.rot_rpy[2])
-
         if self.last_x_from is None:
             # The first goal starts from the measured robot pose. Later goals
             # continue from the previously commanded endpoint.
             self.last_x_from = segment.ee_init_pos.translation
             self.last_r_from = segment.ee_init_pos.rotation
 
-        segment.set_segment(
-            t=self.t,
-            x_from=self.last_x_from,
-            x_to=np.array(goal.pose),
-            r_from=self.last_r_from,
-            r_to=rotation,
-            duration=goal.duration if goal.duration > 0.0 else None,
-            velocity=goal.speed if goal.speed > 0.0 else None,
-            w_pose_from=self.last_w_pose, w_pose_to=np.array(goal.w_pose),
-        )
+        # set remaining segment parameters that are not extracted from the goal
+        # and init the segment
+        segment.x_from = self.last_x_from
+        segment.r_from = self.last_r_from
+        segment.w_pose_from = self.last_w_pose
+        segment.w_pose_to = segment.weights.w_end_effector_poses[segment.ee_frame_name]
+        segment.t_from = self.t
+
+        segment.init_segment()
 
         segment.info_logger = self.get_logger().info
 
-        self.last_w_pose = np.array(goal.w_pose)
-        self.last_x_from = np.array(goal.pose)
-        self.last_r_from = np.array(rotation)
+        self.last_w_pose = segment.w_pose_to
+        self.last_x_from = segment.x_to
+        self.last_r_from = segment.r_to
 
         self.goal_done = Future()
         self.trajectory = segment

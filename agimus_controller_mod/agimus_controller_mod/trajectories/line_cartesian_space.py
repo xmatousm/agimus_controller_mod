@@ -15,11 +15,15 @@ from .trajectory import (
 class LineSegmentCartesianSpace(CartesianSegment):
     """Straight Cartesian segment between two poses."""
 
-    def __init__(self, ee_frame_name: str, weights: TrajectoryPointWeights):
+    def __init__(self, ee_frame_name: str, weights: TrajectoryPointWeights,
+                 goal_tolerance: Optional[float] = None,
+                 goal_tolerance_boost: float = 1.0,
+                 goal_weight_boost: float = 1.0
+                 ):
         super().__init__(ee_frame_name, weights)
-        self.goal_tolerance: Optional[float] = None
-        self.goal_tolerance_boost = 1.0
-        self.goal_weight_boost = 1.0
+        self.goal_tolerance = goal_tolerance
+        self.goal_tolerance_boost = goal_tolerance_boost
+        self.goal_weight_boost = goal_weight_boost
         self.w_boost = 1.0
 
     def interpolate_weighted_point(self, alpha, alpha_w
@@ -115,7 +119,8 @@ class LineSegmentCartesianSpace(CartesianSegment):
         last_x = None
         for one_t in t:
             self.current_t = one_t
-            alpha = min((one_t - self.t_from) / self.duration, 1.0)
+            alpha = min((one_t - self.t_from) / self.duration
+                if self.duration > 0.0 else 1.0, 1.0)
             points += [self.interpolate_weighted_point(alpha, alpha)]
             if last_x is None:
                 last_x = self.last_x

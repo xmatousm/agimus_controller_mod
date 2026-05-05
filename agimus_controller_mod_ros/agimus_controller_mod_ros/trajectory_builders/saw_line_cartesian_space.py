@@ -3,7 +3,8 @@ import numpy as np
 
 from .trajectory_builder import (
     get_all_weights,
-    set_all_weights,
+    set_segment,
+    set_goal,
     trajectory_parameters,
     TrajectoryGoal,
     TrajectoryBuilder,
@@ -34,31 +35,25 @@ class SawLineCartesianSpace(TrajectoryBuilder):
             tooth_tip=params.saw.tooth_tip,
             info_logger=logger.info,
         )
+
     def from_goal(self,
                   goal: TrajectoryGoal,
                   nq: int) -> traj.SawLineSegmentCartesianSpace:
         """Build a single saw-line segment from an action goal."""
         weights = get_all_weights(goal, nq, goal.frame_name)
-        trajectory = traj.SawLineSegmentCartesianSpace(
+        segment = traj.SawLineSegmentCartesianSpace(
             goal.frame_name, weights, goal.s1, np.array(goal.v1))
 
-        return trajectory
+        set_segment(goal, segment)
+        return segment
 
     def to_goal(self, segment: traj.SawLineSegmentCartesianSpace,
                 goal: TrajectoryGoal) -> TrajectoryGoal:
-
-        goal.frame_name = segment.ee_frame_name
+        set_goal(goal, segment)
         goal.trajectory_type = __name__.rpartition(".")[-1] + ':' + \
                                self.__class__.__name__
-        set_all_weights(segment.weights, goal, segment.ee_frame_name)
-
-        goal.pose = list(segment.x_to)
-        # TODO set goal.rot_rpy here
-
-        goal.duration = segment.duration
-        goal.speed = -1.0
 
         goal.s1 = segment.tooth_length
-        goal.v1 = segment.tooth_tip
+        goal.v1 = list(segment.tooth_tip)
 
         return goal
