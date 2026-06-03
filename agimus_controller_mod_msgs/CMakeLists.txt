@@ -11,7 +11,7 @@ find_package(std_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TrajectoryGoal.msg"
   "msg/RobotHWState.msg"
-  "msg/HoleNeeded.msg"
+  "msg/Hole.msg"
   "action/TrajectoryAction.action"
   DEPENDENCIES geometry_msgs std_msgs
 )
