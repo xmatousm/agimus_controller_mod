@@ -76,4 +76,6 @@ trajectory_parameters:
       type: double_array
       default_value: [0.0]
       description: "Size and direction of the saw tooth leading edge."
-
+  gripper:
+    type: int_array
+    default_value: [0]

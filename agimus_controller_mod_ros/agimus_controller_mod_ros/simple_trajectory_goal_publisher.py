@@ -2,7 +2,8 @@ import rclpy
 from agimus_controller_mod_msgs.action import TrajectoryAction
 from rclpy.node import Node
 from rclpy.action import ActionClient
-from .node_utils import init_spin_node
+from std_srvs.srv import SetBool
+from . import node_utils as utils
 
 from .trajectory_builders.trajectory_builder import (
     get_trajectory_builder,
@@ -36,6 +37,16 @@ class SimpleTrajectoryGoalPublisher(Node):
 
         self.trajectory: SegmentedCartesianTrajectory = trajectory
         self.rotation_rpy = self.params.line_endpoints.rotation
+
+        self.gripper = None
+        self.gripper_state = None
+        if len(self.params.gripper) > 1:
+            assert len(self.params.gripper) == trajectory.n_points, \
+                f"gripper length ({len(self.params.gripper)}) must be " + \
+                f"the number of points {trajectory.n_points}"
+            self.gripper = self.params.gripper
+            self.srv_gripper = utils.service_client(self, SetBool,
+                                                    "schunk_gripper/activate")
 
     def do_work(self):
         """Send the next waypoint as an action goal and wait for completion."""
@@ -80,9 +91,19 @@ class SimpleTrajectoryGoalPublisher(Node):
         result = result_future.result().result
         self.get_logger().info(f'Result: {result}')
 
+        if self.gripper is not None:
+            gripper_state = self.gripper[self.trajectory.point] > 0
+            if gripper_state != self.gripper_state:
+                self.gripper_state = gripper_state
+                request = SetBool.Request()
+                request.data = self.gripper[self.trajectory.point] > 0
+                self.srv_gripper.wait_for_service()
+                future = self.srv_gripper.call_async(request)
+                rclpy.spin_until_future_complete(self, future)
+
 
 def main(args=None):
-    init_spin_node(args, SimpleTrajectoryGoalPublisher)
+    utils.init_spin_node(args, SimpleTrajectoryGoalPublisher)
 
 
 if __name__ == "__main__":
