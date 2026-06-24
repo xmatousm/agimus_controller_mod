@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
+import pickle
 import numpy as np
 from scipy.linalg import logm
+
 import pinocchio as pin
 from typing import Optional, Callable
 
@@ -37,19 +40,41 @@ class Trajectory(TrajectoryBase, ABC):
             ref_q: np.ndarray,
             precision=1e-5,
             it_max=10000,
+            damp=1e-2,
+            conv: float = 1.0,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Inverse kinematics to reach the desired end effector pose."""
+        """Iterative solution of inverse kinematics for the end-effector pose.
+        Damped Gauss-Newton method is used.
+
+        :param ee_des_pos: Desired end-effector pose.
+        :param ee_des_vel: Desired end-effector velocity;
+                           3-vecter with position only.
+        :param ref_q: Initial robot configuration used as the seed.
+        :param precision: Convergence threshold for the norm of the log-pose
+                          error.
+        :param it_max: Maximum number of iterations.
+        :param damp: Factor for damped pseudoinverse.
+        :param conv: Step-size multiplier, applied to each update.
+
+        :returns: The converged joint configuration and corresponding joint velocity.
+
+        :raises: RuntimeError: If the iterative loop does not converge.
+        """
         i = 0
         success = False
         ik_q = ref_q.copy()
-        while True:
+        error = np.inf
+
+        damp_mat = damp * np.eye(6)
+        while i <= it_max:
+            i += 1
+
             ik_ee_pose = self.get_end_effector_pose_from_q_as_se3(ik_q)
             dMi = ee_des_pos.actInv(ik_ee_pose)
-            error = pin.log(dMi).vector[:3]
+            error = pin.log(dMi).vector
+
             if np.linalg.norm(error) < precision:
                 success = True
-                break
-            if i > it_max:
                 break
 
             pin.computeJointJacobians(self.pin_model, self.pin_data, ik_q)
@@ -58,22 +83,41 @@ class Trajectory(TrajectoryBase, ABC):
                 self.pin_data,
                 self.ee_frame_id,
                 pin.ReferenceFrame.LOCAL,
-            )[:3, :]
-            dq = -jaco_ee.T @ np.linalg.solve(jaco_ee @ jaco_ee.T, error)
-            ik_q[:] = pin.integrate(self.pin_model, ik_q, dq)
-            i += 1
+            )
+
+            dq = -conv * jaco_ee.T @ np.linalg.solve(
+                jaco_ee @ jaco_ee.T + damp_mat, error)
+            ik_q = pin.integrate(self.pin_model, ik_q, dq)
 
         if not success:
             error_msgs = (
-                f"Inverse kinematics 6D failed to converge with error: "
-                f"{error}. Number of iteration: {i}"
+                f"Inverse kinematics 6D failed to converge, iterations: {i}\n"
+                f"error: {error},\n"
+                f"ref_q: {np.round(ref_q * 180 / np.pi, 2)},\n",
+                f"cur_q: {np.round(ik_q * 180 / np.pi, 2)},\n",
+                f"desired pose: {ee_des_pos}."
             )
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            with open(f"ikt_fail_{timestamp}.pckl", "wb") as fail_file:
+                pickle.dump({
+                    "ref_q": ref_q,
+                    "ik_q": ik_q,
+                    "ee_des_pos": ee_des_pos,
+                    "ee_des_vel": ee_des_vel,
+                    "pin_model": self.pin_model,
+                    "pin_data": self.pin_data,
+                    "ee_frame_id": self.ee_frame_id,
+                }, fail_file)
+
             raise RuntimeError(error_msgs)
 
         pin.forwardKinematics(self.pin_model, self.pin_data, ik_q)
         pin.updateFramePlacement(self.pin_model, self.pin_data,
                                  self.ee_frame_id)
         pin.computeJointJacobians(self.pin_model, self.pin_data, ik_q)
+
+        # des_vel is only pose (3-vector)
         jaco_ee = pin.getFrameJacobian(
             self.pin_model,
             self.pin_data,
