@@ -8,6 +8,7 @@ float64[] w_qdot
 float64[] w_qddot
 float64[] w_robot_effort
 float64[] w_pose
+float64[] reg_q
 float64 goal_tolerance
 float64 goal_tolerance_boost
 float64 goal_weight_boost

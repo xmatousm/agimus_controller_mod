@@ -92,6 +92,7 @@ def set_segment(goal: TrajectoryGoal,
         goal.rot_rpy[0], goal.rot_rpy[1], goal.rot_rpy[2])
     segment.duration = goal.duration if goal.duration > 0.0 else None
     segment.velocity = goal.speed if goal.speed > 0.0 else None
+    segment.reg_q = np.array(goal.reg_q) if len(goal.reg_q) > 1 else None
 
 
 def set_goal(goal: TrajectoryGoal,
@@ -104,6 +105,7 @@ def set_goal(goal: TrajectoryGoal,
     # TODO set goal.rot_rpy here
     goal.duration = segment.duration if segment.duration is not None else -1.0
     goal.speed = segment.velocity if segment.velocity is not None else -1.0
+    goal.reg_q = list(segment.reg_q) if segment.reg_q is not None else [0.0]
 
 
 def get_trajectory_builder(trajectory_name: str,

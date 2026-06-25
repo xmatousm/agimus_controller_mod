@@ -33,6 +33,7 @@ class LineCartesianSpace(TrajectoryBuilder):
             goal_tolerance_boost=params.line_endpoints.goal_tolerance_boost,
             goal_weight_boost=params.line_endpoints.goal_weight_boost,
             info_logger=logger.info,
+            reg_q=params.reg_q,
         )
 
     def from_goal(self,

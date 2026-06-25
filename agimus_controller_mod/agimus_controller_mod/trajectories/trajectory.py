@@ -42,9 +42,20 @@ class Trajectory(TrajectoryBase, ABC):
             it_max=10000,
             damp=1e-2,
             conv: float = 1.0,
+            reg_q: Optional[np.ndarray] = None,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Iterative solution of inverse kinematics for the end-effector pose.
-        Damped Gauss-Newton method is used.
+        """Iterative solution of under-determined inverse kinematics for the
+        end-effector pose.
+
+        Damped Gauss-Newton method is used each step is computed as a minimum
+        norm update. In each step, if regularizator is given, the norm between
+        the updated configuration and regularizator is minimized. Otherwise,
+        the update norm is minimized (i.e., the regularizator is effectively the
+        configuration from the previous step).
+
+        The robot must be redundant (or fully determined), and the seed must
+        not be a singular configuration, i.e., the jacobian must have full row
+        rank.
 
         :param ee_des_pos: Desired end-effector pose.
         :param ee_des_vel: Desired end-effector velocity;
@@ -55,8 +66,10 @@ class Trajectory(TrajectoryBase, ABC):
         :param it_max: Maximum number of iterations.
         :param damp: Factor for damped pseudoinverse.
         :param conv: Step-size multiplier, applied to each update.
+        :param reg_q: Regularizator, optional.
 
-        :returns: The converged joint configuration and corresponding joint velocity.
+        :returns: The converged joint configuration and corresponding joint
+        velocity.
 
         :raises: RuntimeError: If the iterative loop does not converge.
         """
@@ -85,9 +98,19 @@ class Trajectory(TrajectoryBase, ABC):
                 pin.ReferenceFrame.LOCAL,
             )
 
-            dq = -conv * jaco_ee.T @ np.linalg.solve(
-                jaco_ee @ jaco_ee.T + damp_mat, error)
-            ik_q = pin.integrate(self.pin_model, ik_q, dq)
+            # damped minimum-norm solution of J dq + error = 0
+            jjt = jaco_ee @ jaco_ee.T
+            dq = -jaco_ee.T @ np.linalg.solve(jjt + damp_mat, error)
+
+            # regularization - moves in the null space of the Jacobian
+            # towards req_q
+            if reg_q is not None:
+                rq: np.ndarray = reg_q - ik_q
+
+                # no damping here, otherwise would not converge
+                dq += rq - jaco_ee.T @ np.linalg.solve(jjt, jaco_ee @ rq)
+
+            ik_q = pin.integrate(self.pin_model, ik_q, conv * dq)
 
         if not success:
             error_msgs = (
@@ -152,7 +175,8 @@ class CartesianSegment(Trajectory, ABC):
         self.r_delta_log = None
 
         self.weights = weights
-        self.ik_q = None
+        self.last_q = None
+        self.reg_q = None
 
         # the pose weight is interpolated between these two, if given
         self.w_pose_from: Optional[np.ndarray] = None
@@ -162,7 +186,7 @@ class CartesianSegment(Trajectory, ABC):
         """Initialize the trajectory generator."""
 
         super().initialize(pin_model, q0)
-        self.ik_q = q0.copy()
+        self.last_q = q0.copy()
 
         self.ee_init_pos = self.get_end_effector_pose_from_q_as_se3(self.q0)
         self.last_x = self.ee_init_pos.translation.copy()
@@ -251,6 +275,7 @@ class SegmentedCartesianTrajectory(Trajectory, ABC):
             weights: TrajectoryPointWeights,
             goal_tolerance,
             info_logger: Optional[Callable] = None,
+            reg_q: Optional[list] = None,
     ) -> None:
 
         super().__init__(ee_frame_name)
@@ -266,6 +291,10 @@ class SegmentedCartesianTrajectory(Trajectory, ABC):
         self.goal_tolerance = None
         self.point = -1  # the current point we are moving to
         self.info_logger = info_logger
+        self.reg_q = None
+        if reg_q is not None and len(reg_q) > 1:
+            assert len(reg_q) == weights.w_robot_configuration.shape[0]
+            self.reg_q = np.array(reg_q)
 
         assert len(rotation_rpy) == 3, "rotation length must be 3"
         self.rotation = pin.rpy.rpyToMatrix(
@@ -311,6 +340,7 @@ class SegmentedCartesianTrajectory(Trajectory, ABC):
     def switch_segment(self, t):
         """Activate the next segment in the sequence."""
 
+        self.segment.reg_q = self.reg_q
         if self.point < 0:
             # The first segment starts from the initial end-effector pose.
             self.segment.goal_tolerance = self.goal_tolerance[0]

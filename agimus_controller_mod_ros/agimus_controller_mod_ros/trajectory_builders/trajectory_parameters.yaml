@@ -38,6 +38,10 @@ trajectory_parameters:
     type: double_array
     default_value: [0.1]
     description: "Weights for end-effector position cost."
+  reg_q:
+    type: double_array
+    default_value: [0.0]
+    description: "Configuration regularizer."
   line_endpoints:
     rotation:
       type: double_array
