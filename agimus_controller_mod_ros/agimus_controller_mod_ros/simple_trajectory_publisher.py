@@ -17,7 +17,6 @@ from agimus_controller_ros.simple_trajectory_publisher import (
     TrajectoryPublisherBase,
 )
 
-from agimus_controller_mod.trajectories.trajectory import Trajectory
 from .trajectory_builders.trajectory_builder import (
     get_trajectory_builder,
 )
@@ -74,7 +73,6 @@ class SimpleTrajectoryPublisherMod(TrajectoryPublisherBase,
         self.croco_nq = 7
         self.future_init_done = Future()
         self.future_trajectory_done = Future()
-        self.use_q = False  # send current q to trajectory
 
         # Build the chosen trajectory
         builder = get_trajectory_builder(self.params.trajectory_name,
