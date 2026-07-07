@@ -40,11 +40,13 @@ class SawLineCartesianSpace(TrajectoryBuilder):
                   goal: TrajectoryGoal,
                   nq: int) -> traj.SawLineSegmentCartesianSpace:
         """Build a single saw-line segment from an action goal."""
-        weights = get_all_weights(goal, nq, goal.frame_name)
-        segment = traj.SawLineSegmentCartesianSpace(
-            goal.frame_name, weights, goal.s1, np.array(goal.v1))
 
+        segment = traj.SawLineSegmentCartesianSpace(goal.frame_name)
         set_segment(goal, segment)
+        segment.weights = get_all_weights(goal, nq, goal.frame_name)
+        segment.tooth_length = goal.s1
+        segment.tooth_tip = np.array(goal.v1)
+
         return segment
 
     def to_goal(self, segment: traj.SawLineSegmentCartesianSpace,

@@ -62,6 +62,7 @@ class SimpleTrajectoryGoalPublisher(Node):
 
         self.trajectory.segment.running = False
         self.trajectory.switch_segment(0)
+        self.trajectory.segment.init_segment()
 
         self.builder.to_goal(self.trajectory.segment, goal)
         goal.rot_rpy = self.rotation_rpy  # TODO put to the builder

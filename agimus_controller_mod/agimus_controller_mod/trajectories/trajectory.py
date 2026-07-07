@@ -16,7 +16,7 @@ from agimus_controller.trajectory import (
 
 
 class Trajectory(TrajectoryBase, ABC):
-    """Common base for trajectory generators."""
+    """Common base for trajectory generators in cartesian space."""
 
     def __init__(self, ee_frame_name) -> None:
         super().__init__(ee_frame_name)
@@ -153,34 +153,29 @@ class Trajectory(TrajectoryBase, ABC):
 
 
 class CartesianSegment(Trajectory, ABC):
-    """Base class for a segment of a piecewise trajectory in Cartesian space."""
-
-    def __init__(self, ee_frame_name: str, weights: TrajectoryPointWeights):
+    def __init__(self, ee_frame_name) -> None:
         super().__init__(ee_frame_name)
-        self.t_from = None
-        self.t_to = None
-        self.x_len_init = None
+
+        self.ee_init_pos = None
         self.x_from = None
-        self.x_to = None
-        self.x_delta = None
         self.r_from = None
+        self.t_from = None
+        self.x_to = None
         self.r_to = None
+        self.t_to = None
         self.duration = None
         self.velocity = None
-        self.ee_init_pos = None
-        self.running = False
-        self.last_x = None
-        self.last_t = 0.0
-        self.current_t = 0.0
-        self.r_delta_log = None
-
-        self.weights = weights
-        self.last_q = None
         self.reg_q = None
 
-        # the pose weight is interpolated between these two, if given
-        self.w_pose_from: Optional[np.ndarray] = None
-        self.w_pose_to: Optional[np.ndarray] = None
+        self.weights = None
+        self.running = False
+        self.last_t = 0.0
+        self.current_t = 0.0
+        self.last_x = None
+        self.last_q = None
+
+        self.w_pose_from = None
+        self.w_pose_to = None
 
     def initialize(self, pin_model: pin.Model, q0: np.ndarray) -> None:
         """Initialize the trajectory generator."""
@@ -191,45 +186,67 @@ class CartesianSegment(Trajectory, ABC):
         self.ee_init_pos = self.get_end_effector_pose_from_q_as_se3(self.q0)
         self.last_x = self.ee_init_pos.translation.copy()
         self.last_t = 0.0
-
-    def set_segment(self, t: np.float64,
-                    x_from: np.ndarray,
-                    x_to: np.ndarray,
-                    r_from: np.ndarray,
-                    r_to: np.ndarray,
-                    duration: Optional[float] = None,
-                    velocity: Optional[float] = None,
-                    weights: Optional[TrajectoryPointWeights] = None,
-                    w_pose_from: Optional[np.ndarray] = None,
-                    w_pose_to: Optional[np.ndarray] = None,
-                    ):
-        """Configure segment end points, timing, and optional pose weights."""
-
-        self.x_from = x_from
-        self.x_to = x_to
-        self.r_from = r_from
-        self.r_to = r_to
-
-        self.t_from = t
-        self.velocity = velocity
-        self.duration = duration
-        self.w_pose_from = w_pose_from
-        self.w_pose_to = w_pose_to
-
-        if weights is not None:
-            self.weights = weights
-        self.init_segment()
+        self.current_t = 0.0
 
     def init_segment(self) -> None:
         """Segment initialization after its data has been set."""
 
         self.running = True
 
+        assert self.weights is not None
         assert self.x_from is not None
-        assert self.x_to is not None
         assert self.r_from is not None
-        assert self.r_to is not None
         assert self.t_from is not None
+
+    @abstractmethod
+    def evaluate_stopping_criterion(self, t: float, q: np.ndarray) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def interpolate_weighted_point(self, alpha, alpha_w
+                                   ) -> WeightedTrajectoryPoint:
+        raise NotImplementedError()
+
+    def get_traj_point_at_tq(self, t: list[np.float64], q: np.ndarray
+                             ) -> list[WeightedTrajectoryPoint]:
+        assert t[0] >= self.t_from
+
+        self.evaluate_stopping_criterion(t[0], q)
+
+        points = []
+        last_x = None
+        self.last_q = q
+        for one_t in t:
+            self.current_t = one_t
+            alpha = min((one_t - self.t_from) / self.duration
+                        if self.duration > 0.0 else 1.0, 1.0)
+            points += [self.interpolate_weighted_point(alpha, alpha)]
+            if last_x is None:
+                last_x = self.last_x
+        self.last_x = last_x
+        self.last_t = t[0]
+        return points
+
+
+class CartesianLineSegment(CartesianSegment, ABC):
+    """Base class for a segment of a piecewise trajectory in Cartesian space."""
+
+    def __init__(self, ee_frame_name: str):
+        super().__init__(ee_frame_name)
+        self.x_len_init = None
+        self.x_delta = None
+        self.r_delta_log = None
+
+        # the pose weight is interpolated between these two, if given
+        self.w_pose_from: Optional[np.ndarray] = None
+        self.w_pose_to: Optional[np.ndarray] = None
+
+    def init_segment(self) -> None:
+        """Segment initialization after its data has been set."""
+
+        super().init_segment()
+        assert self.x_to is not None
+        assert self.r_to is not None
 
         self.x_delta = self.x_to - self.x_from
         self.x_len_init = np.linalg.norm(self.x_delta)
@@ -273,7 +290,6 @@ class SegmentedCartesianTrajectory(Trajectory, ABC):
             ee_frame_name: str,
             rotation_rpy,
             weights: TrajectoryPointWeights,
-            goal_tolerance,
             info_logger: Optional[Callable] = None,
             reg_q: Optional[list] = None,
     ) -> None:
@@ -321,13 +337,6 @@ class SegmentedCartesianTrajectory(Trajectory, ABC):
                 "w_mul length must be the number of points"
             self.w_mul = w_mul
 
-        if goal_tolerance is None or len(goal_tolerance) <= 1:
-            self.goal_tolerance = [None] * self.n_points
-        else:
-            assert len(goal_tolerance) == self.n_points, \
-                "goal_tolerance length must be the number of points"
-            self.goal_tolerance = goal_tolerance
-
     def initialize(self, pin_model: pin.Model, q0: np.ndarray) -> None:
         """Initialize the trajectory generator."""
 
@@ -338,37 +347,36 @@ class SegmentedCartesianTrajectory(Trajectory, ABC):
         self.point = -1
 
     def switch_segment(self, t):
-        """Activate the next segment in the sequence."""
+        """Activate the next segment in the sequence.
+        The init_segment is not called here to allow overriding. It must be then
+        called later."""
 
         self.segment.reg_q = self.reg_q
+        self.segment.velocity = None
         if self.point < 0:
             # The first segment starts from the initial end-effector pose.
-            self.segment.goal_tolerance = self.goal_tolerance[0]
-            self.segment.set_segment(
-                t=t,
-                x_from=self.ee_init_pos.translation,
-                x_to=self.x[0],
-                r_from=self.ee_init_pos.rotation,
-                r_to=self.rotation,
-                duration=self.transition_time[0],
-                w_pose_from=self.w_pose * self.w_mul[0],
-                w_pose_to=self.w_pose * self.w_mul[0])
+            self.segment.t_from = t
+            self.segment.x_from = self.ee_init_pos.translation
+            self.segment.x_to = self.x[0]
+            self.segment.r_from = self.ee_init_pos.rotation
+            self.segment.r_to = self.rotation
+            self.segment.duration = self.transition_time[0]
+            self.segment.w_pose_from = self.w_pose * self.w_mul[0]
+            self.segment.w_pose_to = self.w_pose * self.w_mul[0]
             self.point = 0
         else:
             point_from = self.point
             # Later segments connect consecutive configured waypoints and loop.
             self.point = (self.point + 1) % self.n_points
 
-            self.segment.goal_tolerance = self.goal_tolerance[self.point]
-            self.segment.set_segment(
-                t=t,
-                x_from=self.x[point_from],
-                x_to=self.x[self.point],
-                r_from=self.rotation,
-                r_to=self.rotation,
-                duration=self.transition_time[point_from + 1],
-                w_pose_from=self.w_pose * self.w_mul[point_from],
-                w_pose_to=self.w_pose * self.w_mul[self.point])
+            self.segment.t_from = t
+            self.segment.x_from = self.x[point_from]
+            self.segment.x_to = self.x[self.point]
+            self.segment.r_from = self.rotation
+            self.segment.r_to = self.rotation
+            self.segment.duration = self.transition_time[point_from + 1]
+            self.segment.w_pose_from = self.w_pose * self.w_mul[point_from]
+            self.segment.w_pose_to = self.w_pose * self.w_mul[self.point]
 
         if self.info_logger is not None:
             self.info_logger(f"Point set: {self.point}, " +
@@ -380,6 +388,7 @@ class SegmentedCartesianTrajectory(Trajectory, ABC):
         # Advance to the next waypoint once the active segment completes.
         if not self.segment.running:
             self.switch_segment(t[0])
+            self.segment.init_segment()
 
         # Delegate interpolation to the currently active segment instance.
         return self.segment.get_traj_point_at_tq(t, q)

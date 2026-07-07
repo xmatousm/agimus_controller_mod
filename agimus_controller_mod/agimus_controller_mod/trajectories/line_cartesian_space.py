@@ -5,25 +5,21 @@ from scipy.linalg import expm
 from typing import Optional, Callable
 from .trajectory import (
     SegmentedCartesianTrajectory,
-    CartesianSegment,
+    CartesianLineSegment,
     TrajectoryPoint,
     TrajectoryPointWeights,
     WeightedTrajectoryPoint,
 )
 
 
-class LineSegmentCartesianSpace(CartesianSegment):
+class LineSegmentCartesianSpace(CartesianLineSegment):
     """Straight Cartesian segment between two poses."""
 
-    def __init__(self, ee_frame_name: str, weights: TrajectoryPointWeights,
-                 goal_tolerance: Optional[float] = None,
-                 goal_tolerance_boost: float = 1.0,
-                 goal_weight_boost: float = 1.0
-                 ):
-        super().__init__(ee_frame_name, weights)
-        self.goal_tolerance = goal_tolerance
-        self.goal_tolerance_boost = goal_tolerance_boost
-        self.goal_weight_boost = goal_weight_boost
+    def __init__(self, ee_frame_name: str):
+        super().__init__(ee_frame_name)
+        self.goal_tolerance = None
+        self.goal_tolerance_boost = None
+        self.goal_weight_boost = None
         self.w_boost = 1.0
         self.reg_q = None
 
@@ -48,7 +44,6 @@ class LineSegmentCartesianSpace(CartesianSegment):
 
         self.last_q = q
         self.last_x = translation
-        self.last_t = self.current_t
 
         ddq = np.zeros(self.pin_model.nv)
         u = pin.rnea(self.pin_model, self.pin_data, q, dq, ddq)
@@ -75,8 +70,10 @@ class LineSegmentCartesianSpace(CartesianSegment):
         return WeightedTrajectoryPoint(
             point=deepcopy(traj_point), weights=traj_weights)
 
-    def evaluate_dist_to_goal(self, curr_pos, t) -> float:
+    def evaluate_stopping_criterion(self, t: float, q: np.ndarray):
         """Update finish conditions and optional weight boosting."""
+        pose = self.get_end_effector_pose_from_q_as_se3(q)
+        curr_pos = pose.translation
         dist_to_goal = np.sqrt(np.sum((self.x_to - curr_pos) ** 2))
 
         # optionally boost weights when approaching the goal
@@ -108,29 +105,6 @@ class LineSegmentCartesianSpace(CartesianSegment):
                 # no goal tolerance, the segment is finished based on time only
                 self.running = False
 
-        return dist_to_goal
-
-    def get_traj_point_at_tq(self, t: list[np.float64], q: np.ndarray
-                             ) -> list[WeightedTrajectoryPoint]:
-        assert t[0] >= self.t_from
-
-        curr_pose = self.get_end_effector_pose_from_q_as_se3(q)
-        self.evaluate_dist_to_goal(curr_pose.translation, t[0])
-
-        points = []
-        last_x = None
-        self.last_q = q
-        for one_t in t:
-            self.current_t = one_t
-            alpha = min((one_t - self.t_from) / self.duration
-                if self.duration > 0.0 else 1.0, 1.0)
-            points += [self.interpolate_weighted_point(alpha, alpha)]
-            if last_x is None:
-                last_x = self.last_x
-        self.last_x = last_x
-        self.last_t = t[0]
-        return points
-
 
 class LineCartesianSpace(SegmentedCartesianTrajectory):
     """Piecewise-linear Cartesian trajectory through configured waypoints."""
@@ -151,10 +125,24 @@ class LineCartesianSpace(SegmentedCartesianTrajectory):
     ):
         super().__init__(x, transition_time, w_mul,
                          ee_frame_name, rotation_rpy, weights,
-                         goal_tolerance, info_logger, reg_q=reg_q)
+                         info_logger, reg_q=reg_q)
 
-        self.segment = LineSegmentCartesianSpace(ee_frame_name, weights)
+        self.segment = LineSegmentCartesianSpace(ee_frame_name)
+
+        if goal_tolerance is None or len(goal_tolerance) <= 1:
+            self.goal_tolerance = [None] * self.n_points
+        else:
+            assert len(goal_tolerance) == self.n_points, \
+                "goal_tolerance length must be the number of points"
+            self.goal_tolerance = goal_tolerance
+
+        self.segment.weights = weights
         self.segment.reg_q = reg_q
         self.segment.info_logger = info_logger
         self.segment.goal_tolerance_boost = goal_tolerance_boost
         self.segment.goal_weight_boost = goal_weight_boost
+
+    def switch_segment(self, t):
+        super().switch_segment(t)
+        self.segment.goal_tolerance = self.goal_tolerance[self.point]
+

@@ -40,17 +40,15 @@ class LineCartesianSpace(TrajectoryBuilder):
                   goal: TrajectoryGoal,
                   nq: int) -> traj.LineSegmentCartesianSpace:
         """Build a single line-segment from an action goal."""
-        weights = get_all_weights(goal, nq, goal.frame_name)
-
         tol = goal.goal_tolerance if goal.goal_tolerance > 0.0 else None
-        segment = traj.LineSegmentCartesianSpace(
-            goal.frame_name,
-            weights,
-            goal_tolerance=tol,
-            goal_tolerance_boost=goal.goal_tolerance_boost,
-            goal_weight_boost=goal.goal_weight_boost)
+        segment = traj.LineSegmentCartesianSpace(goal.frame_name)
 
         set_segment(goal, segment)
+        segment.weights = get_all_weights(goal, nq, goal.frame_name)
+        segment.goal_tolerance = tol
+        segment.goal_tolerance_boost = goal.goal_tolerance_boost
+        segment.goal_weight_boost = goal.goal_weight_boost
+
         return segment
 
     def to_goal(self, segment: traj.LineSegmentCartesianSpace,
