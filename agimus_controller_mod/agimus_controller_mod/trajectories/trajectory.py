@@ -197,6 +197,7 @@ class CartesianSegment(Trajectory, ABC):
         assert self.x_from is not None
         assert self.r_from is not None
         assert self.t_from is not None
+        self.last_t = self.t_from
 
     @abstractmethod
     def evaluate_stopping_criterion(self, t: float, q: np.ndarray) -> None:
@@ -221,6 +222,7 @@ class CartesianSegment(Trajectory, ABC):
             alpha = min((one_t - self.t_from) / self.duration
                         if self.duration > 0.0 else 1.0, 1.0)
             points += [self.interpolate_weighted_point(alpha, alpha)]
+            self.last_t = self.current_t
             if last_x is None:
                 last_x = self.last_x
         self.last_x = last_x
