@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 import pinocchio as pin
 import importlib
-from typing import Union
+from typing import Union, Optional
 from agimus_controller_mod_ros.trajectory_parameters import \
     trajectory_parameters
 from agimus_controller.trajectory import TrajectoryPointWeights
@@ -41,12 +41,21 @@ class TrajectoryBuilder(ABC):
         """Build a trajectory goal from a trajectory segment."""
 
 
-def get_weights(weights: list[np.float64], size: int) -> np.ndarray:
-    """Normalize a weight parameter to a NumPy array of length ``size``.
+def get_weights(weights: list[np.float64], size: int,
+                default: Optional[list[np.float64]] = None) -> np.ndarray:
+    """Normalize a ``weights`` parameter to a NumPy array of length ``size``.
 
-    A scalar-like list such as ``[1.0]`` is broadcast to all entries.
+    A scalar-like weights list like ``[1.0]`` is broadcasted to all entries.
+    If weights are empty, the default is used or and error is raised.
     """
-    if len(weights) == 1:
+    if len(weights) == 0 or len(weights) == 1 and weights[0] < 0.0:
+        # [-1.0] is sentinel for empty; we cannot use empty array as a default
+        # in a YAML param file as this leads to a wrong type being inferred
+        if default is not None:
+            return np.array(default)
+        else:
+            raise ValueError("Weights are empty and no default is provided.")
+    elif len(weights) == 1:
         return np.array(weights * size)
     else:
         assert len(weights) == size
@@ -56,9 +65,24 @@ def get_weights(weights: list[np.float64], size: int) -> np.ndarray:
 def get_all_weights(params: Union[trajectory_parameters.Params, TrajectoryGoal],
                     nq: int,
                     ee_frame_name: str,
+                    default: Optional[Union[
+                        trajectory_parameters.Params, TrajectoryGoal]] = None,
                     ) -> TrajectoryPointWeights:
     """Build a ``TrajectoryPointWeights`` object from ROS params or a goal."""
     # TrajectoryGoal and Params have the same weight attributes
+    if default is not None:
+        return TrajectoryPointWeights(
+            w_robot_configuration=get_weights(params.w_q, nq, default.w_q),
+            w_robot_velocity=get_weights(params.w_qdot, nq, default.w_qdot),
+            w_robot_acceleration=get_weights(params.w_qddot, nq,
+                                             default.w_qddot),
+            w_robot_effort=get_weights(params.w_robot_effort, nq,
+                                       default.w_robot_effort),
+            w_end_effector_poses={
+                ee_frame_name: get_weights(params.w_pose, 6, default.w_pose)
+            }
+        )
+
     return TrajectoryPointWeights(
         w_robot_configuration=get_weights(params.w_q, nq),
         w_robot_velocity=get_weights(params.w_qdot, nq),
