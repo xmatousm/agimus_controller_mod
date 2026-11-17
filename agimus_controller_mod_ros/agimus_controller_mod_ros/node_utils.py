@@ -7,15 +7,19 @@ from rclpy.action import ActionClient
 from rclpy.client import Client
 from std_srvs.srv import SetBool
 import os
+from contextlib import contextmanager
+import time
 
 ros_distro = os.environ.get("ROS_DISTRO")
 if ros_distro == 'humble':
     from rcl_interfaces.srv import GetParameters
 
+
     class AsyncParameterClient:
         def __init__(self, self_node, remote_node_name):
             self.client = self_node.create_client(GetParameters,
-                                                   remote_node_name + '/get_parameters')
+                                                  remote_node_name + '/get_parameters')
+
         def wait_for_services(self, *args, **kwargs):
             return self.client.wait_for_service(*args, **kwargs)
 
@@ -26,6 +30,7 @@ if ros_distro == 'humble':
             return future
 else:
     from rclpy.parameter_client import AsyncParameterClient
+
 
 def init_spin_node(args, node_class: type,
                    arg_parser: Optional[argparse.ArgumentParser] = None):
@@ -135,3 +140,37 @@ def service_client(self_node: Node, srv_type: type,
         f'Connected to service: {client.srv_name}')
 
     return client
+
+
+class MsgTimer:
+    def print_message(self, message: str):
+        print(message)
+
+    def __init__(self, msg: str, print_start: bool = True):
+        self.msg = msg
+        self.start = 0
+        self.result = 'done' if print_start else ''
+        self.print_start = print_start
+
+    def __enter__(self):
+        if self.print_start:
+            self.print_message(f"{self.msg}")
+        self.start = time.perf_counter()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        elapsed = time.perf_counter() - self.start
+        self.print_message(f"{self.msg}: {self.result} [{elapsed:.2f} s]")
+
+
+class DebugTimer(MsgTimer):
+    def __init__(self, msg: str, node: Node, print_start: bool = True):
+        super().__init__(msg, print_start)
+        self.node = node
+
+    def print_message(self, message: str):
+        self.node.get_logger().debug(message)
+
+class InfoTimer(DebugTimer):
+    def print_message(self, message: str):
+        self.node.get_logger().info(message)
